@@ -135,6 +135,35 @@ def _execute_keyword_search_title(cur, query, original_hosts=[], limit=10):
         cur.execute(sql, (query, original_hosts, limit))
     else:
         cur.execute(sql, (query, limit))
+        
+def _execute_keyword_search_attribute_names(cur, query, original_hosts=[], limit=10):
+    sql = r"""SELECT
+                p.id,
+                p.title,
+                p.organization_display_name,
+                p.description,
+                pf.column_names,
+                p.crawler_key,
+                pf.crawler_key,
+                p.num_files
+            FROM 
+                findopendata.packages as p, 
+                findopendata.package_files as pf,
+                plainto_tsquery('english', %s) query
+            WHERE 
+                pf.column_names IS NOT NULL
+                AND p.crawler_key = pf.crawler_key
+                AND CAST(%s AS text) = ANY (column_names)        
+                AND num_files > 0
+        """
+    if original_hosts:
+        sql += r" AND p.original_host in %s "
+    sql += r"  LIMIT %s;"
+    if original_hosts:
+        cur.execute(sql, (query, query, original_hosts, limit))
+    else:
+        cur.execute(sql, (query, query, limit))
+
 
 
 def _execute_keyword_search(cur, query, original_hosts=[], limit=50):
@@ -154,7 +183,6 @@ def _execute_keyword_search(cur, query, original_hosts=[], limit=50):
                 organization_image_url
             FROM 
                 findopendata.packages as p, 
-                findopendata.package_files as pf,
                 findopendata.original_hosts as h,
                 plainto_tsquery('english', %s) query
             WHERE 
@@ -283,6 +311,19 @@ def keyword_search_title():
     cnx = cnxpool.getconn()
     with cnx.cursor(cursor_factory=RealDictCursor) as cursor:
         _execute_keyword_search_title(cursor, query, original_host_filter)
+        results = cursor.fetchall()
+    cnxpool.putconn(cnx)
+    return jsonify(results)
+
+@app.route('/api/keyword-search-attribute', methods=['GET'])
+def keyword_search_attribute():
+    query = request.args.get('query', '')
+    if query == '':
+        return jsonify([])
+    original_host_filter = tuple(request.args.getlist('original_host'))
+    cnx = cnxpool.getconn()
+    with cnx.cursor(cursor_factory=RealDictCursor) as cursor:
+        _execute_keyword_search_attribute_names(cursor, query, original_host_filter)
         results = cursor.fetchall()
     cnxpool.putconn(cnx)
     return jsonify(results)
