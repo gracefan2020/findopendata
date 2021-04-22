@@ -1,0 +1,73 @@
+# Storage settings
+storage:
+  # The storage provider, choose from 'gcp' and 'local'.
+  # Choose 'local' if you are going to store all datasets on your local file
+  # system.
+  provider: local
+
+# Local settings
+local:
+  # The local storage's root directory
+  root: 
+
+# Azure storage settings
+azure:
+  # The connection string associated the Azure storage account.
+  connection_string: 
+  # The name of the container used to store all dataset files.
+  container_name:
+  # The logging level of the storage client
+  # See https://docs.python.org/3/howto/logging.html#logging-levels
+  log_level: 30 # warning
+
+# Google Cloud settings
+gcp:
+  project_name: 
+  project_id: 
+  # Service account key file local location.
+  service_account_file: 
+  # Cloud Storage bucket for storing dataset files.
+  bucket_name: 
+
+# PostgreSQL connection settings
+postgres:
+  host: 127.0.0.1
+  port: 5432
+  dbname: 
+  user: 
+  password: 
+  sslmode: disable
+
+# Celery settings
+celery:
+  broker: amqp://guest@localhost:5672/
+  queue: "findopendata"
+
+# Crawler settings
+crawler:
+  working_dir: /tmp
+  # The blob name prefix (i.e., top-level folder) for CKAN datasets.
+  ckan_blob_prefix: ckan
+  # The blob name prefix (i.e., top-level folder) for Socrata datasets.
+  socrata_blob_prefix: socrata
+
+# Index settings
+index:
+  max_records_per_dataset: 1000000
+  table_sample_size: 20
+  minhash_size: 256
+  minhash_seed: 43
+  hyperloglog_p: 8
+  column_sample_size: 100
+  enable_word_vector_data: false
+  minhash_lsh_threshold: 0.5
+
+# API Server local settings
+apiserver_local:
+  host: 127.0.0.1
+  port: 8080
+
+# LSH Server local settings
+lshserver_local:
+  host: 127.0.0.1
+  port: 8081

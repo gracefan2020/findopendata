@@ -1,0 +1,25 @@
+service: lshserver
+runtime: go
+env: flex
+
+manual_scaling:
+  instances: 1
+
+resources:
+  cpu: 1
+  memory_gb: 6.1
+
+readiness_check:
+  app_start_timeout_sec: 2400
+
+beta_settings:
+  cloud_sql_instances: CLOUD_SQL_CONNECTION_NAME
+
+env_variables:
+  PGHOST: /cloudsql/CLOUD_SQL_CONNECTION_NAME
+  PGDATABASE: 
+  PGUSER: 
+  PGSSLMODE: disable
+  PGPASSWORD: 
+
+  MODE: release

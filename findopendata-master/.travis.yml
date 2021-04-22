@@ -1,0 +1,18 @@
+group: travis_latest
+language: python
+cache: pip
+python:
+  - "3.6"
+  - "3.7"
+addons:
+  apt:
+    packages:
+      - libsnappy-dev
+install:
+  - pip install -e .[test]
+  - python -m spacy download en_core_web_sm
+  - python -m spacy download en_vectors_web_lg
+  - npm install -g azurite
+script:
+  - azurite-blob &
+  - nose2

@@ -1,0 +1,1 @@
+celery -A findopendata worker -l info -Ofair
