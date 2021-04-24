@@ -361,11 +361,14 @@ def keyword_search():
         _execute_keyword_search(cursor, query, original_host_filter)
         results = cursor.fetchall()
     cnxpool.putconn(cnx)
+    # remove duplicate datasets that have different dates (same names, different dates - could indicate an update)
+    # can't do DISTINCT in SQL query, since the different dates are embedded in the dataset titles
     titleDate = {}
     final = []
     for index, r in enumerate(results):
         currTitle = r['title']
         try:
+            # parse date, for example with format: 30 May 2014
             matches = list(datefinder.find_dates(currTitle))
             if matches and matches[0].year < 2022 and 0 < matches[0].month < 13:
                 _, tokens = parse(currTitle, fuzzy_with_tokens=True)
@@ -378,13 +381,13 @@ def keyword_search():
                     titleDate[newTitle] = (matches[0], index)
             
             else:
-                
+                # parse year, for example with format 2017
                 yearTitle = currTitle
                 replaceChar = ['-', '(', ')']
                 for char in replaceChar:
                     yearTitle = yearTitle.replace(char, ' ')
                 yearMatch = re.findall('\d{4}', yearTitle)
-                yearMatch = [i for i in yearMatch if 2000 < int(i) < 2022]
+                yearMatch = [i for i in yearMatch if 1900 < int(i) < 2022]
                 
                 if yearMatch:
                     for m in yearMatch:
@@ -397,6 +400,7 @@ def keyword_search():
                     else:
                         titleDate[yearTitle] = (yearMatch[-1], index)
                 else:
+                    # add every other dataset to the final results
                     final.append(r)
             
         except:
