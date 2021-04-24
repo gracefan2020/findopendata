@@ -3,6 +3,9 @@ import heapq
 import uuid
 
 from flask import Flask, render_template, jsonify, request, abort, Response
+from dateutil.parser import parse
+import datefinder
+import re
 import flask.json as json
 from flask_cors import CORS
 from psycopg2.extras import RealDictCursor, register_uuid
@@ -151,48 +154,66 @@ def _execute_keyword_search_attribute_names(cur, query, original_hosts=[], limit
                 findopendata.package_files as pf,
                 plainto_tsquery('english', %s) query
             WHERE 
-                pf.column_names IS NOT NULL
-                AND p.crawler_key = pf.crawler_key
-                AND CAST(%s AS text) = ANY (column_names)        
+                p.crawler_key = pf.crawler_key
+                AND to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')) @@ query        
                 AND num_files > 0
         """
     if original_hosts:
         sql += r" AND p.original_host in %s "
-    sql += r"  LIMIT %s;"
+    sql += r"  ORDER BY ts_rank_cd(to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')), query) DESC LIMIT %s;"
     if original_hosts:
-        cur.execute(sql, (query, query, original_hosts, limit))
+        cur.execute(sql, (query, original_hosts, limit))
     else:
-        cur.execute(sql, (query, query, limit))
+        cur.execute(sql, (query, limit))
 
 
 
 def _execute_keyword_search(cur, query, original_hosts=[], limit=50):
-    sql = r"""SELECT
-                id,
+    _execute_keyword_search_attribute_names(cur, query, original_hosts, limit)
+    results = cur.fetchall()
+    sql = r""" 
+            SELECT DISTINCT results.title, results.description, results.id, results.created, results.modified, results.tags, results.organization_name, results.organization_display_name, results.organization_image_url
+            FROM ( SELECT
+                p.id,
                 p.original_host,
                 h.display_name as original_host_display_name,
                 h.region as original_host_region,
-                num_files,
-                created,
-                modified,
-                title,
-                description,
-                tags,
-                organization_name,
-                organization_display_name,
-                organization_image_url
+                p.num_files,
+                p.created,
+                p.modified,
+                p.title,
+                p.description,
+                p.tags,
+                p.organization_name,
+                p.organization_display_name,
+                p.organization_image_url
             FROM 
                 findopendata.packages as p, 
                 findopendata.original_hosts as h,
                 plainto_tsquery('english', %s) query
-            WHERE 
-                to_tsvector('english', title || organization_display_name || description) @@ query
+            """
+    if results:
+        print(len(results))
+        sql += r""" , (SELECT column_names, package_files.crawler_key
+                    FROM findopendata.package_files, findopendata.packages
+                    WHERE column_names IS NOT NULL AND package_files.crawler_key=packages.crawler_key) as pf"""
+                
+    sql += r""" WHERE 
+                to_tsvector('english', p.title || p.organization_display_name || p.description) @@ query
                 AND p.original_host = h.original_host
                 AND num_files > 0
-        """
+            """
     if original_hosts:
         sql += r" AND p.original_host in %s "
-    sql += r" ORDER BY ts_rank_cd(to_tsvector('english', title || organization_display_name || description), query) DESC LIMIT %s;"
+        
+    if results:
+        sql += r""" 
+                AND to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')) @@ query
+                ORDER BY ts_rank_cd(to_tsvector('english', p.title || REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')), query) DESC LIMIT %s) as results"""
+    else:
+        sql += r"""
+                ORDER BY ts_rank_cd(to_tsvector('english', p.title || p.organization_display_name || p.description), query) DESC LIMIT %s) as results"""
+
     if original_hosts:
         cur.execute(sql, (query, original_hosts, limit))
     else:
@@ -340,8 +361,51 @@ def keyword_search():
         _execute_keyword_search(cursor, query, original_host_filter)
         results = cursor.fetchall()
     cnxpool.putconn(cnx)
-    return jsonify(results)
-
+    titleDate = {}
+    final = []
+    for index, r in enumerate(results):
+        currTitle = r['title']
+        try:
+            matches = list(datefinder.find_dates(currTitle))
+            if matches and matches[0].year < 2022 and 0 < matches[0].month < 13:
+                _, tokens = parse(currTitle, fuzzy_with_tokens=True)
+                newTitle = ''.join(tokens)
+                if newTitle in titleDate:
+                    # find most recent dataset if they have repeated names
+                    if matches[0] > titleDate[newTitle][0]:
+                        titleDate[newTitle] = (matches[0], index)
+                else:
+                    titleDate[newTitle] = (matches[0], index)
+            
+            else:
+                
+                yearTitle = currTitle
+                replaceChar = ['-', '(', ')']
+                for char in replaceChar:
+                    yearTitle = yearTitle.replace(char, ' ')
+                yearMatch = re.findall('\d{4}', yearTitle)
+                yearMatch = [i for i in yearMatch if 2000 < int(i) < 2022]
+                
+                if yearMatch:
+                    for m in yearMatch:
+                        yearTitle = yearTitle.replace(m, '')
+                    yearMatch = list(map(int, yearMatch))
+                    
+                    if yearTitle in titleDate:
+                        if yearMatch[-1] > titleDate[yearTitle][0]:
+                            titleDate[yearTitle] = (yearMatch[-1], index)
+                    else:
+                        titleDate[yearTitle] = (yearMatch[-1], index)
+                else:
+                    final.append(r)
+            
+        except:
+            final.append(r)
+            
+        
+    for td in titleDate:
+        final.append(results[titleDate[td][1]])
+    return jsonify(final)
 
 @app.route('/api/similar-packages', methods=['GET'])
 def similar_packages():
