@@ -140,7 +140,8 @@ def _execute_keyword_search_title(cur, query, original_hosts=[], limit=10):
         cur.execute(sql, (query, limit))
         
 def _execute_keyword_search_attribute_names(cur, query, original_hosts=[], limit=10):
-    sql = r"""SELECT
+    sql = r"""SELECT DISTINCT results.title, results.organization_display_name, results.description
+            FROM (SELECT
                 p.id,
                 p.title,
                 p.organization_display_name,
@@ -154,13 +155,13 @@ def _execute_keyword_search_attribute_names(cur, query, original_hosts=[], limit
                 findopendata.package_files as pf,
                 plainto_tsquery('english', %s) query
             WHERE 
-                p.crawler_key = pf.crawler_key
+                p.key = pf.package_key
                 AND to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')) @@ query        
                 AND num_files > 0
         """
     if original_hosts:
         sql += r" AND p.original_host in %s "
-    sql += r"  ORDER BY ts_rank_cd(to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')), query) DESC LIMIT %s;"
+    sql += r"  ORDER BY ts_rank_cd(to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')), query) DESC LIMIT %s) AS results;"
     if original_hosts:
         cur.execute(sql, (query, original_hosts, limit))
     else:
@@ -170,7 +171,7 @@ def _execute_keyword_search_attribute_names(cur, query, original_hosts=[], limit
 
 def _execute_keyword_search(cur, query, original_hosts=[], limit=50):
     _execute_keyword_search_attribute_names(cur, query, original_hosts, limit)
-    results = cur.fetchall()
+    attResults = cur.fetchall()
     sql = r""" 
             SELECT DISTINCT results.title, results.description, results.id, results.created, results.modified, results.tags, results.organization_name, results.organization_display_name, results.organization_image_url
             FROM ( SELECT
@@ -192,11 +193,9 @@ def _execute_keyword_search(cur, query, original_hosts=[], limit=50):
                 findopendata.original_hosts as h,
                 plainto_tsquery('english', %s) query
             """
-    if results:
-        print(len(results))
-        sql += r""" , (SELECT column_names, package_files.crawler_key
-                    FROM findopendata.package_files, findopendata.packages
-                    WHERE column_names IS NOT NULL AND package_files.crawler_key=packages.crawler_key) as pf"""
+    if attResults:
+        print(len(attResults))
+        sql += r""" , findopendata.package_files as pf"""
                 
     sql += r""" WHERE 
                 to_tsvector('english', p.title || p.organization_display_name || p.description) @@ query
@@ -206,10 +205,12 @@ def _execute_keyword_search(cur, query, original_hosts=[], limit=50):
     if original_hosts:
         sql += r" AND p.original_host in %s "
         
-    if results:
+    if attResults:
         sql += r""" 
+                AND column_names IS NOT NULL
                 AND to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')) @@ query
-                ORDER BY ts_rank_cd(to_tsvector('english', p.title || REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')), query) DESC LIMIT %s) as results"""
+                ORDER BY ts_rank_cd(to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')), query) DESC,
+                ts_rank_cd(to_tsvector('english', p.title), query) DESC LIMIT %s) as results"""
     else:
         sql += r"""
                 ORDER BY ts_rank_cd(to_tsvector('english', p.title || p.organization_display_name || p.description), query) DESC LIMIT %s) as results"""
