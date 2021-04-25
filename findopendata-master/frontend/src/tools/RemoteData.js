@@ -13,6 +13,18 @@ function FetchOriginalHosts(callBack) {
 		});
 }
 
+function FetchDataFormats(callBack) {
+	fetch(`${API_ENDPOINT}/data-formats`)
+		.then(handleErrors)
+		.then((res) => res.json())
+		.then((results) => {
+			callBack(results);
+		})
+		.catch((err) => {
+			console.log(err);
+		});
+}
+
 function FetchKeywordSearchTitleResults(
 	query,
 	selectedOriginalHosts,
@@ -57,13 +69,25 @@ function FetchKeywordSearchAttributesResults(
 		});
 }
 
-function FetchKeywordSearchResults(query, selectedOriginalHosts, callBack) {
+function FetchKeywordSearchResults(
+	query,
+	selectedOriginalHosts,
+	selectedDataFormats,
+	callBack
+) {
 	var url_queries = [`query=${query}`];
 	if (selectedOriginalHosts.length > 0) {
 		url_queries = url_queries.concat(
 			selectedOriginalHosts.map((h) => `original_host=${h}`)
 		);
 	}
+	if (selectedDataFormats.length > 0) {
+		url_queries = url_queries.concat(
+			selectedDataFormats.map((f) => `format=${f}`)
+		);
+	}
+	console.log("PRINTING url_queries");
+	console.log(url_queries);
 	fetch(`${API_ENDPOINT}/keyword-search?${url_queries.join("&")}`)
 		.then(handleErrors)
 		.then((res) => res.json())
@@ -162,6 +186,7 @@ function FetchJoinableColumns(
 
 export {
 	FetchOriginalHosts,
+	FetchDataFormats,
 	FetchKeywordSearchResults,
 	FetchKeywordSearchTitleResults,
 	FetchKeywordSearchAttributesResults,

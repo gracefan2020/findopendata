@@ -169,16 +169,13 @@ def _execute_keyword_search_attribute_names(cur, query, original_hosts=[], limit
 
 
 
-def _execute_keyword_search(cur, query, original_hosts=[], limit=50):
+def _execute_keyword_search(cur, query, original_hosts=[], format_filter=[], limit=50):
     _execute_keyword_search_attribute_names(cur, query, original_hosts, limit)
     attResults = cur.fetchall()
     sql = r""" 
             SELECT DISTINCT results.title, results.description, results.id, results.created, results.modified, results.tags, results.organization_name, results.organization_display_name, results.organization_image_url
             FROM ( SELECT
                 p.id,
-                p.original_host,
-                h.display_name as original_host_display_name,
-                h.region as original_host_region,
                 p.num_files,
                 p.created,
                 p.modified,
@@ -190,23 +187,26 @@ def _execute_keyword_search(cur, query, original_hosts=[], limit=50):
                 p.organization_image_url
             FROM 
                 findopendata.packages as p, 
-                findopendata.original_hosts as h,
                 plainto_tsquery('english', %s) query
             """
-    if attResults:
-        print(len(attResults))
+    if attResults or format_filter:
+        print("Number of results when comparing query with attribute names: ", len(attResults))
         sql += r""" , findopendata.package_files as pf"""
                 
     sql += r""" WHERE 
                 to_tsvector('english', p.title || p.organization_display_name || p.description) @@ query
-                AND p.original_host = h.original_host
                 AND num_files > 0
             """
-    if original_hosts:
-        sql += r" AND p.original_host in %s "
+    if format_filter:
+        print("Format Filter is not null: ", format_filter)
+        sql += r""" 
+                AND p.key = pf.package_key
+                AND format !=''
+                AND format IN %s"""
         
     if attResults:
         sql += r""" 
+                AND p.key = pf.package_key
                 AND column_names IS NOT NULL
                 AND to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')) @@ query
                 ORDER BY ts_rank_cd(to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')), query) DESC,
@@ -215,8 +215,8 @@ def _execute_keyword_search(cur, query, original_hosts=[], limit=50):
         sql += r"""
                 ORDER BY ts_rank_cd(to_tsvector('english', p.title || p.organization_display_name || p.description), query) DESC LIMIT %s) as results"""
 
-    if original_hosts:
-        cur.execute(sql, (query, original_hosts, limit))
+    if format_filter:
+        cur.execute(sql, (query, format_filter, limit))
     else:
         cur.execute(sql, (query, limit))
 
@@ -323,6 +323,34 @@ cnxpool.putconn(cnx)
 def original_hosts():
     return jsonify(_original_hosts)
 
+_data_formats = []
+cnx = cnxpool.getconn()
+with cnx.cursor(cursor_factory=RealDictCursor) as cursor:
+    cursor.execute(r"""SELECT DISTINCT format
+                   FROM findopendata.package_files
+                   WHERE format != ''
+                   """)
+    format_results = cursor.fetchall()
+    # set_results = set()
+    # for r in format_results:
+    #     if "." in r['filename']:
+    #         curr_filetype = r["filename"][r["filename"].rfind(".")+1:]
+    #         if len(curr_filetype) < 6:
+    #             r["filename"] = curr_filetype.lower()
+    #             set_results.add(r["filename"])
+
+    # # dict_results = {}
+    # # dict_results["format"] = set_results
+    # # _data_formats = [row for row in dict_results]
+    # _data_formats = [{"format": curr_filetype} for curr_filetype in set_results]
+    _data_formats = [row for row in format_results]
+    
+cnxpool.putconn(cnx)
+
+@app.route('/api/data-formats', methods=['GET'])
+def data_formats():
+    return jsonify(_data_formats)
+
 
 @app.route('/api/keyword-search-title', methods=['GET'])
 def keyword_search_title():
@@ -357,9 +385,11 @@ def keyword_search():
     if query == '':
         return jsonify([])
     original_host_filter = tuple(request.args.getlist('original_host'))
+    format_filter = tuple(request.args.getlist('format'))
+    print(format_filter)
     cnx = cnxpool.getconn()
     with cnx.cursor(cursor_factory=RealDictCursor) as cursor:
-        _execute_keyword_search(cursor, query, original_host_filter)
+        _execute_keyword_search(cursor, query, original_host_filter, format_filter)
         results = cursor.fetchall()
     cnxpool.putconn(cnx)
     # remove duplicate datasets that have different dates (same names, different dates - could indicate an update)
