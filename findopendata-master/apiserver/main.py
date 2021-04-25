@@ -194,8 +194,7 @@ def _execute_keyword_search(cur, query, original_hosts=[], format_filter=[], lim
         sql += r""" , findopendata.package_files as pf"""
                 
     sql += r""" WHERE 
-                to_tsvector('english', p.title || p.organization_display_name || p.description) @@ query
-                AND num_files > 0
+                num_files > 0
             """
     if format_filter:
         print("Format Filter is not null: ", format_filter)
@@ -208,18 +207,18 @@ def _execute_keyword_search(cur, query, original_hosts=[], format_filter=[], lim
         sql += r""" 
                 AND p.key = pf.package_key
                 AND column_names IS NOT NULL
-                AND to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')) @@ query
-                ORDER BY ts_rank_cd(to_tsvector('english', REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')), query) DESC,
-                ts_rank_cd(to_tsvector('english', p.title), query) DESC LIMIT %s) as results"""
+                AND to_tsvector('english', p.title || REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')) @@ query
+                ORDER BY ts_rank_cd(to_tsvector('english', p.title || REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')), query) DESC LIMIT %s) as results
+                """
     else:
         sql += r"""
+                AND to_tsvector('english', p.title || p.organization_display_name || p.description) @@ query
                 ORDER BY ts_rank_cd(to_tsvector('english', p.title || p.organization_display_name || p.description), query) DESC LIMIT %s) as results"""
 
     if format_filter:
         cur.execute(sql, (query, format_filter, limit))
     else:
         cur.execute(sql, (query, limit))
-
 
 def _execute_similar_packages(cur, ids, original_hosts=[], limit=50):
     sql = r"""SELECT
@@ -336,12 +335,9 @@ with cnx.cursor(cursor_factory=RealDictCursor) as cursor:
     #     if "." in r['filename']:
     #         curr_filetype = r["filename"][r["filename"].rfind(".")+1:]
     #         if len(curr_filetype) < 6:
-    #             r["filename"] = curr_filetype.lower()
+    #             r["filename"] = curr_filetype.upper()
     #             set_results.add(r["filename"])
 
-    # # dict_results = {}
-    # # dict_results["format"] = set_results
-    # # _data_formats = [row for row in dict_results]
     # _data_formats = [{"format": curr_filetype} for curr_filetype in set_results]
     _data_formats = [row for row in format_results]
     
