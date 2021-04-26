@@ -330,16 +330,13 @@ with cnx.cursor(cursor_factory=RealDictCursor) as cursor:
                    WHERE format != ''
                    """)
     format_results = cursor.fetchall()
-    # set_results = set()
-    # for r in format_results:
-    #     if "." in r['filename']:
-    #         curr_filetype = r["filename"][r["filename"].rfind(".")+1:]
-    #         if len(curr_filetype) < 6:
-    #             r["filename"] = curr_filetype.upper()
-    #             set_results.add(r["filename"])
-
-    # _data_formats = [{"format": curr_filetype} for curr_filetype in set_results]
-    _data_formats = [row for row in format_results]
+    pre_filters = ["XLS", "XLSX", "XSL", "ZIP", "PDF", "ODS", "CSV"]
+    set_results = set()
+    for r in format_results:
+        for f in pre_filters:
+            if f.upper() in r['format'].upper():
+                set_results.add(f.upper())
+    _data_formats = [{"format": curr_filetype} for curr_filetype in sorted(set_results)]
     
 cnxpool.putconn(cnx)
 
