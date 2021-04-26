@@ -204,6 +204,8 @@ def _execute_keyword_search(cur, query, original_hosts=[], format_filter=[], lim
                 AND format IN %s"""
         
     if attResults:
+        # if there are results from comparing the query with attribute names, then rank the results
+        # by similarity between query and title and query and attribute names
         sql += r""" 
                 AND p.key = pf.package_key
                 AND column_names IS NOT NULL
@@ -211,6 +213,7 @@ def _execute_keyword_search(cur, query, original_hosts=[], format_filter=[], lim
                 ORDER BY ts_rank_cd(to_tsvector('english', p.title || REPLACE(ARRAY_TO_STRING(pf.column_names, ',', '*'), '/', ' ')), query) DESC LIMIT %s) as results
                 """
     else:
+        # else: rank results by similarity between query and title, organization name, and description
         sql += r"""
                 AND to_tsvector('english', p.title || p.organization_display_name || p.description) @@ query
                 ORDER BY ts_rank_cd(to_tsvector('english', p.title || p.organization_display_name || p.description), query) DESC LIMIT %s) as results"""
@@ -330,7 +333,7 @@ with cnx.cursor(cursor_factory=RealDictCursor) as cursor:
                    WHERE format != ''
                    """)
     format_results = cursor.fetchall()
-    pre_filters = ["XLS", "XLSX", "XSL", "ZIP", "PDF", "ODS", "CSV"]
+    pre_filters = ["XLS", "XLSX", "XSL", "ZIP", "PDF", "ODS", "CSV", "TEXT", "JSON", "XML", "API", "HTML", "TXT", "DOCX", "PPTX", "TAR"]
     set_results = set()
     for r in format_results:
         for f in pre_filters:
@@ -342,6 +345,7 @@ cnxpool.putconn(cnx)
 
 @app.route('/api/data-formats', methods=['GET'])
 def data_formats():
+    # allow user to filter datasets by a particular filetype
     return jsonify(_data_formats)
 
 
